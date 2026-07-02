@@ -42,9 +42,14 @@ timeouts). Two extension points are wired into it, both in `SmtpGatewayListener`
      spool file rather than a half-registered queue item, which is deliberately treated as
      "never accepted" from the client's point of view.
 
-The inbound listener itself never authenticates a session (`AuthenticationRequired(false)` is
-hardcoded) and only ever binds to addresses `LoopbackEndpointValidator` confirms are loopback
-(`127.0.0.1` / `::1`); see [docs/security.md](security.md) for the full inbound security model.
+By default the inbound listener does not authenticate a session and only binds to addresses
+`LoopbackEndpointValidator` confirms are loopback (`127.0.0.1` / `::1`). Both are now configurable:
+`LoopbackEndpointValidator.Validate` takes the `Smtp:AllowNonLoopbackBind` flag and permits a
+network-reachable bind when it is set, and configuring `Smtp:AuthUsername`/`AuthPassword` turns on
+required inbound SMTP AUTH (`AuthenticationRequired`/`AllowUnsecureAuthentication` are driven by
+whether both credentials are present). `InboundHostedService` emits the network-reachability /
+open-relay / cleartext-AUTH warning matrix (`StartupBindingWarnings`) before the listener starts;
+see [docs/security.md](security.md) for the full inbound security model.
 
 ## Queue state machine
 

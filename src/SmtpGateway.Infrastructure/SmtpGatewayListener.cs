@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Logging;
 using SmtpServer;
+using SmtpServer.Authentication;
 using SmtpServer.ComponentModel;
 using SmtpServer.Storage;
 
@@ -26,7 +27,7 @@ public sealed class SmtpGatewayListener : IAsyncDisposable
         ArgumentNullException.ThrowIfNull(spool);
         ArgumentNullException.ThrowIfNull(repository);
 
-        LoopbackEndpointValidator.ValidateLoopbackOnly(options.BindEndpoints);
+        LoopbackEndpointValidator.Validate(options.BindEndpoints, options.AllowNonLoopbackBind);
 
         // SmtpGatewayListener isn't itself DI-resolved (it's constructed directly by
         // InboundHostedService), so it takes an ILoggerFactory - consistent with how the hosted
@@ -42,6 +43,17 @@ public sealed class SmtpGatewayListener : IAsyncDisposable
         serviceProvider.Add(
             (IMailboxFilter)new RecipientLimitMailboxFilter(options.MaxRecipients, recipientFilterLogger));
 
+        // Inbound AUTH is opt-in: only when BOTH credentials are configured. When enabled it is
+        // enforced for every session (loopback included) - an operator who configures credentials
+        // wants unauthenticated sessions rejected. The inbound listener has no TLS by design, so
+        // AllowUnsecureAuthentication is required for AUTH to be offered over the plaintext session.
+        var authRequired = options.IsInboundAuthConfigured;
+        if (authRequired)
+        {
+            serviceProvider.Add(
+                (IUserAuthenticator)new FixedCredentialUserAuthenticator(options.AuthUsername!, options.AuthPassword!));
+        }
+
         var optionsBuilder = new SmtpServerOptionsBuilder()
             .ServerName(options.ServerName)
             .MaxMessageSize(options.MaxMessageSizeBytes, MaxMessageSizeHandling.Strict);
@@ -51,7 +63,8 @@ public sealed class SmtpGatewayListener : IAsyncDisposable
             var boundEndpoint = endpoint;
             optionsBuilder = optionsBuilder.Endpoint(endpointBuilder => endpointBuilder
                 .Endpoint(boundEndpoint)
-                .AuthenticationRequired(false)
+                .AuthenticationRequired(authRequired)
+                .AllowUnsecureAuthentication(authRequired)
                 .SessionTimeout(options.IdleTimeout));
         }
 

@@ -194,6 +194,58 @@ public sealed class GatewayOptionsValidatorTests
     }
 
     [Fact]
+    public void Validate_AcceptsBothInboundAuthCredentials()
+    {
+        var valid = ValidOptions();
+        var options = new GatewayOptions
+        {
+            Smtp = new SmtpInboundOptions
+            {
+                BindEndpoints = ["127.0.0.1:2525"],
+                AuthUsername = "relay-user",
+                AuthPassword = "s3cr3t",
+            },
+            SpoolDirectory = valid.SpoolDirectory,
+            QueueDatabasePath = valid.QueueDatabasePath,
+            OutboundProvider = valid.OutboundProvider,
+        };
+
+        Assert.Null(Record.Exception(() => GatewayOptionsValidator.Validate(options)));
+    }
+
+    [Fact]
+    public void Validate_AcceptsNeitherInboundAuthCredential()
+    {
+        // The default ValidOptions() configures no inbound AUTH; both empty is valid.
+        Assert.Null(Record.Exception(() => GatewayOptionsValidator.Validate(ValidOptions())));
+    }
+
+    [Theory]
+    [InlineData("relay-user", null)]
+    [InlineData(null, "s3cr3t")]
+    [InlineData("relay-user", "  ")]
+    [InlineData("  ", "s3cr3t")]
+    public void Validate_ThrowsWhenOnlyOneInboundAuthCredentialIsConfigured(string? username, string? password)
+    {
+        var valid = ValidOptions();
+        var options = new GatewayOptions
+        {
+            Smtp = new SmtpInboundOptions
+            {
+                BindEndpoints = ["127.0.0.1:2525"],
+                AuthUsername = username,
+                AuthPassword = password,
+            },
+            SpoolDirectory = valid.SpoolDirectory,
+            QueueDatabasePath = valid.QueueDatabasePath,
+            OutboundProvider = valid.OutboundProvider,
+        };
+
+        var exception = Assert.Throws<InvalidOperationException>(() => GatewayOptionsValidator.Validate(options));
+        Assert.Contains("Smtp:AuthUsername", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Validate_ThrowsWhenSenderRewriteAddressIsMalformed()
     {
         var valid = ValidOptions();

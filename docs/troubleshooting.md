@@ -17,15 +17,46 @@ against the exact config file the service is using - it runs the same validation
 (`GatewayOptionsValidator` plus building the outbound provider) outside the service process, with a
 clear single-line error message, and never crashes even on a badly malformed file.
 
-If `config validate` passes but the service still won't start, the most likely remaining cause is a
-**non-loopback `Smtp:BindEndpoints` value** - `config validate` does not check loopback-only (see
-[docs/configuration.md](configuration.md)); that check only runs when the SMTP listener is actually
-constructed at service startup. Confirm every configured bind endpoint is `127.0.0.1:<port>` or
-`[::1]:<port>`.
+If `config validate` passes but the service still won't start, one likely remaining cause is a
+**non-loopback `Smtp:BindEndpoints` value** - see "Service refuses to start with a non-loopback bind
+address" below.
 
 Also check that the configured port isn't already in use by another process (`netstat -ano | findstr :<port>`),
 and - if you configured `Gateway:Smtp:BindEndpoints` to port `25` - see "Port 25 requires
 Administrator rights" below.
+
+## Service refuses to start with a non-loopback bind address
+
+The listener is **loopback-only by default**. If `Smtp:BindEndpoints` contains anything other than
+`127.0.0.1:<port>` / `[::1]:<port>` - a specific LAN IP, or a wildcard such as `0.0.0.0:<port>` /
+`[::]:<port>` - and `Smtp:AllowNonLoopbackBind` is not `true`, `LoopbackEndpointValidator` fails the
+service startup by design (logged `Critical`, non-zero exit; `config validate` does **not** catch
+this - see [docs/configuration.md](configuration.md)). The startup error names the
+`Smtp:AllowNonLoopbackBind` flag.
+
+- If the network bind was **unintended**, fix `BindEndpoints` back to a loopback address - do not
+  set the flag.
+- If you genuinely need a network-reachable listener, **think twice first**: a non-loopback bind
+  makes the gateway reachable from the network, and without inbound AUTH it is effectively an open
+  relay. Only then set `Smtp:AllowNonLoopbackBind` to `true`, and read the network-binding guidance
+  (configure `AuthUsername`/`AuthPassword`, mind the no-STARTTLS cleartext caveat, firewall the
+  port) in [docs/security.md](security.md). Heed the startup warning matrix the service logs in this
+  mode. A restart is required after the change.
+
+## Clients get "530 authentication required"
+
+If a legacy client's `MAIL FROM` is rejected with `530` (authentication required), then inbound SMTP
+AUTH is configured - both `Smtp:AuthUsername` and `Smtp:AuthPassword` are set - and every session
+(loopback included) must authenticate before submitting. Resolve it one of two ways:
+
+- **Make the client authenticate.** Point the legacy application at the configured username/password
+  and let it do `AUTH LOGIN`/`AUTH PLAIN` before `MAIL FROM`. Correct credentials return `235`;
+  wrong credentials return `535` (and the session still can't submit).
+- **Remove the requirement.** If that client cannot authenticate and the listener is loopback-only,
+  clear **both** credentials (e.g. `smtpgw-admin config set Smtp:AuthUsername ""` and
+  `... Smtp:AuthPassword ""`) to disable inbound AUTH. Setting only one is itself a startup error.
+  Restart the service afterward. Do **not** disable AUTH on a non-loopback bind (see
+  [docs/security.md](security.md)).
 
 ## Messages stuck in the queue
 

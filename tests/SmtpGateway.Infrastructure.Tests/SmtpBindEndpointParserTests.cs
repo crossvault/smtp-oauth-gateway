@@ -24,6 +24,24 @@ public sealed class SmtpBindEndpointParserTests
         Assert.Equal(2525, endpoint.Port);
     }
 
+    [Fact]
+    public void Parse_AcceptsIPv4WildcardWithPort()
+    {
+        var endpoint = SmtpBindEndpointParser.Parse("0.0.0.0:2525");
+
+        Assert.Equal(IPAddress.Any, endpoint.Address);
+        Assert.Equal(2525, endpoint.Port);
+    }
+
+    [Fact]
+    public void Parse_AcceptsBracketedIPv6WildcardWithPort()
+    {
+        var endpoint = SmtpBindEndpointParser.Parse("[::]:2525");
+
+        Assert.Equal(IPAddress.IPv6Any, endpoint.Address);
+        Assert.Equal(2525, endpoint.Port);
+    }
+
     [Theory]
     [InlineData("not-an-endpoint")]
     [InlineData("127.0.0.1")]

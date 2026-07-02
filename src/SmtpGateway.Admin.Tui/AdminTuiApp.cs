@@ -14,6 +14,9 @@ public static class AdminTuiApp
     {
         config.SetApplicationName("smtpgw-admin");
 
+        config.AddCommand<WizardCommand>("setup")
+            .WithDescription("First-install interactive wizard: configure inbound, storage, and outbound provider, then write appsettings.json.");
+
         config.AddCommand<StatusCommand>("status")
             .WithDescription("Show the queue and provider status dashboard.");
 

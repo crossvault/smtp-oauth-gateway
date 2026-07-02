@@ -71,6 +71,57 @@ The Admin TUI is `tui\SmtpGateway.Admin.Tui.exe`, a standalone `Spectre.Console.
 (command name `smtpgw-admin`). Every command accepts a global `--config <PATH>` option (defaults to
 `appsettings.json` in the current directory) so you can point it at a config file elsewhere.
 
+### Interactive shell (no arguments)
+
+Running `smtpgw-admin` **with no arguments at all** launches an interactive, menu-driven shell
+instead of a single command; passing *any* argument (including `--help`) keeps the classic
+one-shot command behaviour unchanged, so scripting is unaffected. The shell opens on a banner
+(product name, version, resolved config path) and a main menu:
+
+- **Dashboard** - the same queue depth/summary information as `status`, colour-coded by status.
+- **Queue** - a queue browser (the same listing as `queue list`); selecting an item shows its full
+  detail and a per-item action menu of Retry / Discard / Export (the selection *is* the action, no
+  extra confirmation, matching the CLI) plus back.
+- **Configuration** - Show (as `config show`) and Validate (as `config validate`).
+- **First-time setup** - runs the same `setup` wizard described below.
+- **Provider test** - the same warnings-only connectivity probe as `provider test`.
+- **Quit**.
+
+A missing or unreadable config file does not crash the shell: it shows a friendly panel pointing at
+**First-time setup** and still lets you reach the menu. The shell reuses the exact same
+repository/spool/config/provider code paths as the scripting commands; it is a convenience front-end,
+not a separate feature set.
+
+### `setup`
+
+```
+smtpgw-admin setup [--config <PATH>]
+```
+
+A first-install interactive wizard that fills in the essential `appsettings.json` settings so you
+don't have to hand-edit JSON. It is a small four-page flow:
+
+1. **Inbound listening** - one or more bind endpoints (comma-separated `IP:port`, default
+   `127.0.0.1:2525`). Entering a non-loopback or wildcard endpoint prints a security warning and
+   requires explicit confirmation; on confirmation it sets `Smtp:AllowNonLoopbackBind=true`
+   automatically and then offers to capture the optional inbound AUTH username/password (recommended
+   for a network-reachable listener, which has no STARTTLS).
+2. **Storage** - `SpoolDirectory` and `QueueDatabasePath`.
+3. **Outbound provider** - `GenericSmtp`, `M365Oauth`, or `Graph`, followed by that provider's own
+   fields (host/port/TLS/auth for `GenericSmtp`; tenant/client/secret/mailbox for the two OAuth
+   providers).
+4. **Review** - a table of every value to be written (secrets shown in cleartext, consistent with
+   `config show`), with **Save**, jump back to any page, or **Cancel**.
+
+You can move Back/Next between pages or Cancel at any point; **only Save writes anything**, and
+Cancel writes nothing. If the config file already exists, its current values are prefilled as
+defaults, and the wizard announces up front that the **whole file will be rewritten on Save with no
+backup kept** (unrelated keys are still preserved, like `config set`). On Save it writes the file,
+re-runs the same validation as `config validate` (reported as a warning, never rolled back), offers
+to run the warnings-only `provider test` connectivity probe, and prints the restart-required
+reminder. The wizard covers only the first-run essentials; everything else (TTLs, rate limits, ...)
+stays editable via `config set`.
+
 ### `status`
 
 ```
@@ -154,7 +205,15 @@ smtpgw-admin config set <PATH> <VALUE> [--config <PATH>]
 
 Sets a single setting by its `:`-delimited dotted path (e.g. `Smtp:MaxRecipients`, or
 `OutboundProvider:GenericSmtp:Password`), creating intermediate JSON objects as needed, and
-preserving every unrelated key. The write happens unconditionally - there is no rollback - after
+preserving every unrelated key. For example, to configure the optional inbound SMTP AUTH
+credentials (both are required together - see [docs/security.md](security.md)):
+
+```powershell
+smtpgw-admin config set Smtp:AuthUsername relay-user
+smtpgw-admin config set Smtp:AuthPassword <a-strong-password>
+```
+
+The write happens unconditionally - there is no rollback - after
 which the command re-validates the resulting configuration (`GatewayOptionsValidator` plus
 building the outbound provider) and prints a **warning only** if the result is now invalid; it does
 not undo the write. `appsettings.json` may be reformatted in the process (comments and original
