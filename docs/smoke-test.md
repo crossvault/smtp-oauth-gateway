@@ -8,7 +8,8 @@ that can be pointed at a custom host/port works equally well.
 ## Prerequisites
 
 - The service is installed and running (`docs/operations.md`'s Install/Start steps), with
-  `Gateway:Smtp:BindEndpoints` set to something like `"127.0.0.1:2525"`.
+  `Gateway:Smtp:BindEndpoints` set to something like `"127.0.0.1:2525"` (the `smtpgw-admin setup`
+  wizard can create that `appsettings.json` for you - see [docs/operations.md](operations.md#setup)).
 - You know the configured port. The examples below use `2525`.
 - `smtpgw-admin` (the Admin TUI executable) is available, pointed at the same `appsettings.json`
   the service is using (`--config <PATH>` if it isn't in the current directory).

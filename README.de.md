@@ -58,12 +58,37 @@ entpackt wurde. Im Archiv finden sich unter anderem:
 
 .NET oder Ähnliches muss **nicht** installiert werden - alles Nötige ist enthalten.
 
-### 3. Die Konfigurationsdatei bearbeiten
+### 3. Die Konfiguration ausfüllen
 
-`service\appsettings.json` in einem Texteditor öffnen (Notepad genügt). Die im ZIP mitgelieferte
-Datei enthält alle Optionen mit Kommentaren; auszufüllen sind nur die Angaben für **eine**
-Versandart. Hier die kleinste funktionierende Konfiguration für den häufigsten Fall - Versand über
-Microsoft 365 mit Microsoft Graph:
+SmtpGateway wird über eine einzige Datei konfiguriert, `service\appsettings.json`. Es gibt zwei
+Wege, sie auszufüllen: den geführten Assistenten des Verwaltungswerkzeugs (am einfachsten) oder das
+Bearbeiten der Datei von Hand.
+
+**Variante A (empfohlen): der Einrichtungsassistent.** Das Verwaltungswerkzeug mit dem Befehl
+`setup` aufrufen - dafür ist **kein** Administrator-Terminal nötig, da nur eine
+Konfigurationsdatei geschrieben wird:
+
+```powershell
+C:\SmtpGateway\tui\SmtpGateway.Admin.Tui.exe setup --config C:\SmtpGateway\service\appsettings.json
+```
+
+Der Assistent führt durch drei kurze Seiten - eingehendes Empfangen (einfach die Voreinstellung
+`127.0.0.1:2525` beibehalten), die Speicherorte und den ausgehenden Provider (Graph / M365Oauth /
+GenericSmtp samt dessen Feldern) - und zeigt anschließend eine Übersichtsseite. Ein Klick auf
+**Speichern** schreibt `service\appsettings.json` und weist darauf hin, dass ein Neustart des
+Dienstes nötig ist; **Abbrechen** schreibt nichts. Existiert die Datei bereits, werden ihre
+aktuellen Werte als Vorgaben angeboten und die gesamte Datei beim Speichern neu geschrieben (es wird
+keine Sicherungskopie angelegt).
+
+> Das `--config` oben weist den Assistenten auf die `service\appsettings.json` des Dienstes hin. Ohne
+> diese Angabe liest und schreibt das Werkzeug eine `appsettings.json` im aktuellen Verzeichnis
+> (also neben der ausführbaren Datei im `tui\`-Ordner), und das ist **nicht** die Datei, die der
+> Dienst verwendet.
+
+**Variante B: die Datei von Hand bearbeiten.** `service\appsettings.json` in einem Texteditor öffnen
+(Notepad genügt). Die im ZIP mitgelieferte Datei enthält alle Optionen mit Kommentaren; auszufüllen
+sind nur die Angaben für **eine** Versandart. Hier die kleinste funktionierende Konfiguration für
+den häufigsten Fall - Versand über Microsoft 365 mit Microsoft Graph:
 
 ```json
 {
@@ -148,6 +173,12 @@ Anleitung (auch, wie sich eine Testnachricht ohne die eigene Anwendung senden l�
 > aufgerufen, jeweils `--config C:\SmtpGateway\service\appsettings.json` anhängen. In seiner eigenen
 > Hilfe nennt sich das Werkzeug `smtpgw-admin`.
 
+> Tipp: Wird `SmtpGateway.Admin.Tui.exe` **ohne Argumente** aufgerufen, öffnet sich ein interaktives
+> Menü (mit Übersicht, Warteschlangen-Browser, Konfigurationsansicht, Ersteinrichtung und
+> Provider-Test) - praktisch zum Erkunden, ohne sich Befehlsnamen merken zu müssen. Alle oben
+> gezeigten Befehle funktionieren beim Übergeben von Argumenten weiterhin genau wie beschrieben, das
+> Skripting bleibt also unberührt.
+
 ### Wenn etwas nicht funktioniert
 
 - Der Dienst startet nicht, es wird nichts angenommen, oder Nachrichten bleiben in der Warteschlange
@@ -161,7 +192,7 @@ Anleitung (auch, wie sich eine Testnachricht ohne die eigene Anwendung senden l�
 
 SmtpGateway ist ein reines ausgehendes Relay für den Versand. Es ist **kein** Mailserver: kein POP3,
 kein IMAP, keine Speicherung eingehender Postfächer. Es nimmt Mail über einen ausschließlich an
-Loopback gebundenen SMTP-Listener an, schreibt jede Nachricht dauerhaft in einen Datei-Spool **und**
+Loopback gebundenen SMTP-Listener (Standardeinstellung) an, schreibt jede Nachricht dauerhaft in einen Datei-Spool **und**
 eine SQLite-Warteschlange, gibt `250 OK` erst zurück, wenn **beides** festgeschrieben ist, und ein
 Hintergrundprozess stellt jede Nachricht anschließend über genau einen konfigurierten Provider mit
 Wiederholung und Backoff zu.
@@ -191,9 +222,16 @@ Wiederholung und Backoff zu.
 
 ### Funktionen
 
-- **Eingang nur über Loopback.** Der Listener bindet ausschließlich an `127.0.0.1` / `::1` und
-  verweigert den Start auf jeder anderen Adresse - er kann nicht zu einem aus dem Netz erreichbaren
-  offenen Relay werden.
+- **Eingang standardmäßig nur über Loopback.** Der Listener bindet an `127.0.0.1` / `::1` und
+  verweigert den Start auf jeder anderen Adresse, sofern dies nicht ausdrücklich mit
+  `Smtp:AllowNonLoopbackBind` freigegeben wird. Eine Bindung an eine LAN- bzw. Wildcard-Adresse ist
+  möglich, aber bewusst abgesichert: Sie protokolliert unübersehbare Sicherheitswarnungen beim Start
+  und sollte mit der optionalen eingehenden SMTP-AUTH kombiniert werden (siehe "An eine
+  Netzwerkadresse binden (fortgeschritten)" weiter unten und [docs/security.md](docs/security.md)).
+- **Optionale eingehende SMTP-AUTH.** Werden `Smtp:AuthUsername` **und** `Smtp:AuthPassword` gesetzt,
+  muss sich jede eingehende Sitzung anmelden (PLAIN/LOGIN); bleiben beide leer (Standard), gibt es
+  keine eingehende Authentifizierung. Vor allem für einen netzgebundenen Listener gedacht - beachten:
+  Der eingehende Listener hat kein STARTTLS, diese Zugangsdaten laufen also im Klartext über das Netz.
 - **Dauerhafte Zustellung, mindestens einmal.** Spool-Datei + SQLite-Queue; `250 OK` erst nach dem
   Festschreiben beider; Wiederholung/Backoff mit Zustellstatus je Empfänger und einer Queue-Gültig-
   keitsdauer (TTL, auf 5 Tage begrenzt).
@@ -210,6 +248,32 @@ Wiederholung und Backoff zu.
 - **In sich geschlossen.** Wird als win-x64-ZIP ausgeliefert; Endnutzer installieren kein .NET.
 - Optional: Gegendruck (Backpressure) über die Spool-Größe und Ratenbegrenzung des ausgehenden
   Versands.
+
+### An eine Netzwerkadresse binden (fortgeschritten)
+
+> Die empfohlene und voreingestellte Konfiguration belässt den Listener auf Loopback
+> (`127.0.0.1`) - die Anfängerschritte oben tun genau das, und die meisten Installationen müssen das
+> nie ändern. Nur weiterlesen, wenn eine Altanwendung auf einem **anderen** Rechner das Gateway
+> erreichen muss.
+
+Standardmäßig verweigert das Gateway jede Bindung außer an `127.0.0.1` / `::1`, und die Startfehler-
+meldung nennt das Flag, das dies aufhebt. Um an eine bestimmte LAN-IP oder eine Wildcard-Adresse
+(`0.0.0.0` / `[::]`) zu binden:
+
+1. `Gateway:Smtp:AllowNonLoopbackBind` auf `true` setzen und den Netzwerk-Endpunkt in
+   `BindEndpoints` eintragen (z. B. `"192.168.1.10:2525"`). Der Dienst protokolliert dann beim Start
+   eine unübersehbare **WARNUNG**, dass er aus dem Netzwerk erreichbar ist.
+2. **Eingehende SMTP-AUTH konfigurieren** (empfohlen, nicht erzwungen): sowohl `Smtp:AuthUsername`
+   als auch `Smtp:AuthPassword` setzen, damit kein nicht angemeldeter Rechner Mail über den Provider
+   weiterleiten kann. Ohne AUTH ist jeder, der den Port erreicht, ein offenes Relay.
+3. Beachten: Der eingehende Listener hat **kein STARTTLS** - diese AUTH-Zugangsdaten (und der
+   Nachrichteninhalt) laufen im **Klartext** über das Netz. Auf diesem Netzsegment als abhörbar
+   behandeln.
+4. Den Port mit der **Windows-Firewall** auf die konkreten Quell-Rechner beschränken.
+
+Wie bei jeder Konfigurationsänderung ist ein Neustart des Dienstes erforderlich. Die vollständige
+Warnmatrix steht in [docs/security.md](docs/security.md), die genauen Schlüssel und Validierungs-
+regeln in [docs/configuration.md](docs/configuration.md).
 
 ### Dokumentation
 
@@ -229,6 +293,8 @@ Wiederholung und Backoff zu.
 ### Das Verwaltungswerkzeug im Überblick
 
 ```
+smtpgw-admin                        # ohne Argumente: interaktives Menü öffnen (Übersicht, Warteschlange, Konfiguration, Einrichtung, Test)
+smtpgw-admin setup                  # Ersteinrichtungs-Assistent: appsettings.json ausfüllen (Eingang, Speicher, Provider)
 smtpgw-admin status                 # Übersicht zu Warteschlange und Provider
 smtpgw-admin queue list             # Einträge auflisten (Filter mit --status)
 smtpgw-admin queue show <id>        # vollständige Details zu einem Eintrag
@@ -276,11 +342,13 @@ prüft die Abhängigkeiten auf bekannte Schwachstellen, jeweils auf `windows-lat
 
 Die Zustellung erfolgt **mindestens einmal** ("at-least-once"), sodass eine Nachricht in seltenen
 Absturz-/Wiederholungsfällen mehr als einmal zugestellt werden kann - SmtpGateway daher nicht dort
-einsetzen, wo eine genau-einmalige Zustellung zwingend ist. Der Eingang ist **konstruktionsbedingt
-nur über Loopback** erreichbar und kann nicht ins Netzwerk geöffnet werden. Der Dienst läuft
-**ausschließlich unter Windows** (er setzt auf das Windows-Dienst-Hosting und wird als win-x64
-veröffentlicht). Die genauen Zusicherungen stehen in [docs/queue.md](docs/queue.md) und
-[docs/security.md](docs/security.md).
+einsetzen, wo eine genau-einmalige Zustellung zwingend ist. Der Eingang ist **standardmäßig nur über
+Loopback** erreichbar; eine Bindung an eine Netzwerkadresse ist ausschließlich über die ausdrückliche
+Freigabe `Smtp:AllowNonLoopbackBind` möglich und wird dringend abgeraten, sofern nicht zusätzlich die
+eingehende SMTP-AUTH konfiguriert und der Port per Firewall abgesichert wird (siehe
+[docs/security.md](docs/security.md)). Der Dienst läuft **ausschließlich unter Windows** (er setzt auf
+das Windows-Dienst-Hosting und wird als win-x64 veröffentlicht). Die genauen Zusicherungen stehen in
+[docs/queue.md](docs/queue.md) und [docs/security.md](docs/security.md).
 
 ## Mitwirken
 
