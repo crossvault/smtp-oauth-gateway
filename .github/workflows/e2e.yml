@@ -50,7 +50,7 @@ jobs:
       - uses: actions/checkout@v4
         if: steps.gate.outputs.configured == 'true'
 
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/setup-dotnet@v5
         if: steps.gate.outputs.configured == 'true'
         with:
           global-json-file: global.json
