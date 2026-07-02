@@ -1,0 +1,47 @@
+name: CodeQL
+
+# Advanced-setup CodeQL scanning for the C# code base. Runs on pushes and PRs targeting main and
+# on a weekly schedule so newly published queries catch existing code even without a code change.
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    # 04:00 UTC every Monday - a quiet hour, once a week is plenty for a repo this size.
+    - cron: "0 4 * * 1"
+
+# Least-privilege: CodeQL needs security-events: write to upload the SARIF results, plus read-only
+# access to the repo contents and (for the CodeQL packs / internal logging on private repos)
+# packages and actions. Nothing else is granted.
+permissions:
+  contents: read
+  security-events: write
+  packages: read
+  actions: read
+
+jobs:
+  analyze:
+    name: Analyze (C#)
+    # ubuntu-latest is the cheaper/faster hosted runner and is fully supported for C# with
+    # build-mode "none" (no compilation happens, so the Windows-only bits of the product are
+    # irrelevant to the scan).
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      # build-mode "none" is the current default and recommended mode for C#: CodeQL builds its
+      # database directly from source without observing a compilation, so no setup-dotnet/build
+      # step is required.
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@54f647b7e1bb85c95cddabcd46b0c578ec92bc1a # v4.36.3
+        with:
+          languages: csharp
+          build-mode: none
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@54f647b7e1bb85c95cddabcd46b0c578ec92bc1a # v4.36.3
+        with:
+          category: "/language:csharp"

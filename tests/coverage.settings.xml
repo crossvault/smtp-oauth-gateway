@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Code-coverage settings for the Microsoft.Testing.Platform CodeCoverage collector
+  (Microsoft.Testing.Extensions.CodeCoverage), passed via the coverage-settings option.
+
+  Scope: measure ONLY the four product assemblies. The Include list is a whitelist of ModulePath
+  regexes (ECMAScript), so the test assemblies (SmtpGateway.*.Tests.dll) and every third-party
+  dependency (xunit, MailKit, Spectre.Console, Serilog, SmtpServer, ...) are excluded automatically
+  by not matching. The ".dll$" anchor keeps SmtpGateway.Core.dll in while keeping
+  SmtpGateway.Core.Tests.dll out.
+-->
+<Configuration>
+  <CodeCoverage>
+    <ModulePaths>
+      <Include>
+        <ModulePath>.*SmtpGateway\.Core\.dll$</ModulePath>
+        <ModulePath>.*SmtpGateway\.Infrastructure\.dll$</ModulePath>
+        <ModulePath>.*SmtpGateway\.Service\.dll$</ModulePath>
+        <ModulePath>.*SmtpGateway\.Admin\.Tui\.dll$</ModulePath>
+      </Include>
+    </ModulePaths>
+
+    <!-- Exclude compiler-generated / non-user code so the number reflects real, testable logic. -->
+    <Attributes>
+      <Exclude>
+        <Attribute>^System\.Diagnostics\.DebuggerHiddenAttribute$</Attribute>
+        <Attribute>^System\.Diagnostics\.DebuggerNonUserCodeAttribute$</Attribute>
+        <Attribute>^System\.CodeDom\.Compiler\.GeneratedCodeAttribute$</Attribute>
+        <Attribute>^System\.Diagnostics\.CodeAnalysis\.ExcludeFromCodeCoverageAttribute$</Attribute>
+      </Exclude>
+    </Attributes>
+
+    <EnableStaticManagedInstrumentation>True</EnableStaticManagedInstrumentation>
+    <EnableDynamicManagedInstrumentation>True</EnableDynamicManagedInstrumentation>
+  </CodeCoverage>
+</Configuration>

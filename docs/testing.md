@@ -30,9 +30,10 @@ dotnet test tests/SmtpGateway.Infrastructure.Tests/SmtpGateway.Infrastructure.Te
 (`Directory.Build.props`), so a build with any compiler warning fails outright, not just the
 affected test.
 
-CI (`.github/workflows/ci.yml`) runs `dotnet restore`, `dotnet build --configuration Release`,
-`dotnet test --configuration Release --no-build`, then `dotnet list package --vulnerable
---include-transitive` as a NuGet dependency vulnerability audit, on `windows-latest` (this project
+CI (`.github/workflows/ci.yml`) runs `dotnet restore`, `dotnet build --configuration Release`, the
+three product test projects under the Microsoft.Testing.Platform CodeCoverage collector, the 75%
+line-coverage gate (`scripts/check-coverage.ps1`, see below), then `dotnet list package
+--vulnerable --include-transitive` as a NuGet dependency vulnerability audit, on `windows-latest` (this project
 is developed and tested Windows-only: `SmtpGateway.Service` targets `net10.0-windows` for
 `Microsoft.Extensions.Hosting.WindowsServices`/EventLog, `SmtpGateway.Core`/`.Infrastructure`/
 `.Admin.Tui` target plain `net10.0`, and the release build in
@@ -82,9 +83,26 @@ retry/backoff edges, lease-exclusivity races, TLS/auth failure classification, a
 command surface are all covered explicitly because they are exactly the kind of logic that silently
 breaks, not because a coverage tool demanded it).
 
-`Microsoft.Testing.Extensions.CodeCoverage` is referenced by all three test projects and is the
-mechanism available for collecting coverage locally or in CI if you want to check the current
-number; it is not wired into `ci.yml` as an enforced failing gate today - see the note below.
+### How the gate is wired into CI
+
+`Microsoft.Testing.Extensions.CodeCoverage` is referenced by all three product test projects. CI
+runs each of them with `dotnet test <proj> --configuration Release --no-build -- --coverage
+--coverage-settings tests/coverage.settings.xml --coverage-output-format cobertura --coverage-output
+<proj>.cobertura.xml` (arguments after `--` are forwarded to the Microsoft.Testing.Platform test
+app). `tests/coverage.settings.xml` scopes the measurement to the four **product** assemblies only
+- `SmtpGateway.Core`, `SmtpGateway.Infrastructure`, `SmtpGateway.Service`, `SmtpGateway.Admin.Tui`
+- via a `ModulePaths/Include` whitelist, so the test assemblies and every third-party dependency
+are excluded from the denominator.
+
+`scripts/check-coverage.ps1` then aggregates the per-project Cobertura reports and fails the build
+below 75%. Because the same product assembly is exercised by more than one test project (for
+example `SmtpGateway.Core` is loaded by all three), the reports are **merged at line granularity**,
+not summed: each source line counts once per assembly toward the denominator, and counts as covered
+if *any* report recorded a hit on it. The reported figure is a weighted total (covered lines /
+valid lines across all product assemblies), never an average of per-project percentages. The gate
+is on that single weighted total; lower-covered hosting/rendering assemblies (`SmtpGateway.Service`,
+`SmtpGateway.Admin.Tui`) are reported in the per-assembly table for visibility but are not gated
+individually.
 
 ## TDD-first approach
 
@@ -97,13 +115,21 @@ particular reads as a set of small, single-purpose, pure functions/types (`Retry
 `SlidingWindowRateLimiter`) - each one exists because a test needed an isolated, infrastructure-free
 unit to assert against, and the type boundary follows the test boundary rather than the reverse.
 
-## Known gap: coverage is not currently enforced as a CI failure condition
+## Running the coverage gate locally
 
-`.github/workflows/ci.yml`'s `Test` step runs `dotnet test --configuration Release --no-build` with
-no coverage-collection flags and no threshold check, and no separate coverage step exists in the
-workflow. In other words, the 75% line-coverage floor described above is the project's *documented
-intent*, but as of this writing it is not yet wired into CI as something that can fail a build - a
-pull request that drops coverage below 75% would not currently be blocked automatically. Treat the
-75% figure as the target to check manually (using the `Microsoft.Testing.Extensions.CodeCoverage`
-collector already referenced by each test project, via its Microsoft.Testing.Platform coverage
-options) until an enforced CI gate is added.
+The same gate can be reproduced locally from the repository root:
+
+```powershell
+dotnet build --configuration Release
+$settings = Join-Path $PWD 'tests/coverage.settings.xml'
+$out = Join-Path $PWD 'artifacts/coverage'
+New-Item -ItemType Directory -Force -Path $out | Out-Null
+foreach ($p in 'Core','Infrastructure','Integration') {
+  $proj = @{ Core='tests/SmtpGateway.Core.Tests'; Infrastructure='tests/SmtpGateway.Infrastructure.Tests'; Integration='tests/SmtpGateway.IntegrationTests' }[$p]
+  dotnet test $proj --configuration Release --no-build -- --coverage --coverage-settings $settings --coverage-output-format cobertura --coverage-output (Join-Path $out "$p.cobertura.xml")
+}
+./scripts/check-coverage.ps1
+```
+
+`check-coverage.ps1` prints a per-assembly + weighted-total table and exits non-zero below the 75%
+floor.
