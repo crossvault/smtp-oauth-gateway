@@ -31,9 +31,7 @@ public sealed class QueueListCommand : AsyncCommand<QueueListSettings>
         var repository = new SqliteQueueRepository(options.QueueDatabasePath);
         var items = await repository.ListAsync(cancellationToken);
 
-        items = settings.Status is { } status
-            ? items.Where(item => item.Status == status).ToList()
-            : items.Where(item => item.Status != QueueItemStatus.Discarded).ToList();
+        items = QueueListFilter.Filter(items, settings.Status);
 
         var now = DateTimeOffset.UtcNow;
         var table = new Table();

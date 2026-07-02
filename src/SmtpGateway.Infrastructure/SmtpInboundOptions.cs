@@ -21,6 +21,24 @@ public sealed class SmtpInboundOptions
     [MinLength(1)]
     public IReadOnlyList<string> BindEndpoints { get; init; } = [];
 
+    /// <summary>
+    /// When false (the default), any non-loopback bind endpoint (a LAN IP or a wildcard "0.0.0.0" /
+    /// "[::]") fails fast at startup. Set true to deliberately permit a network-reachable bind - see
+    /// the startup warnings emitted by the service in that case.
+    /// </summary>
+    public bool AllowNonLoopbackBind { get; init; }
+
+    /// <summary>
+    /// Optional inbound SMTP AUTH username. When both this and <see cref="AuthPassword"/> are set,
+    /// AUTH is enabled AND required for every inbound session (loopback included); leaving both
+    /// null/empty disables inbound AUTH. Configuring exactly one is a startup configuration error
+    /// (see <see cref="GatewayOptionsValidator"/>).
+    /// </summary>
+    public string? AuthUsername { get; init; }
+
+    /// <summary>Optional inbound SMTP AUTH password; see <see cref="AuthUsername"/>. Never logged.</summary>
+    public string? AuthPassword { get; init; }
+
     public string ServerName { get; init; } = "smtpoauth";
 
     [Range(1, int.MaxValue)]
@@ -35,6 +53,9 @@ public sealed class SmtpInboundOptions
     public SmtpGatewayOptions ToSmtpGatewayOptions() => new()
     {
         BindEndpoints = SmtpBindEndpointParser.ParseAll(BindEndpoints),
+        AllowNonLoopbackBind = AllowNonLoopbackBind,
+        AuthUsername = AuthUsername,
+        AuthPassword = AuthPassword,
         ServerName = ServerName,
         MaxMessageSizeBytes = MaxMessageSizeBytes,
         MaxRecipients = MaxRecipients,

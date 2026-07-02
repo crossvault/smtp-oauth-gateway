@@ -1,6 +1,5 @@
 using Spectre.Console;
 using Spectre.Console.Cli;
-using SmtpGateway.Infrastructure;
 
 namespace SmtpGateway.Admin.Tui.Commands;
 
@@ -16,39 +15,17 @@ public sealed class ConfigValidateCommand : Command<GatewayCommandSettings>
     {
         try
         {
-            GatewayOptions options;
-            try
+            // The validation sequence itself lives in the shared ConfigValidation helper so the
+            // interactive shell's configuration screen reports the exact same outcome.
+            var result = ConfigValidation.Run(settings.ConfigPath);
+            if (result.Success)
             {
-                options = GatewayConfigLoader.Load(settings.ConfigPath);
-            }
-            catch (Exception ex) when (ex is FileNotFoundException or InvalidOperationException)
-            {
-                AnsiConsole.MarkupLineInterpolated($"[red]Failed to load configuration: {ex.Message}[/]");
-                return 1;
+                AnsiConsole.MarkupLineInterpolated($"[green]{result.Message}[/]");
+                return 0;
             }
 
-            try
-            {
-                GatewayOptionsValidator.Validate(options);
-            }
-            catch (Exception ex)
-            {
-                AnsiConsole.MarkupLineInterpolated($"[red]Configuration is invalid: {ex.Message}[/]");
-                return 1;
-            }
-
-            try
-            {
-                OutboundProviderFactory.Create(options.OutboundProvider);
-            }
-            catch (Exception ex)
-            {
-                AnsiConsole.MarkupLineInterpolated($"[red]Outbound provider configuration is invalid: {ex.Message}[/]");
-                return 1;
-            }
-
-            AnsiConsole.MarkupLine("[green]Configuration is valid.[/]");
-            return 0;
+            AnsiConsole.MarkupLineInterpolated($"[red]{result.Message}[/]");
+            return 1;
         }
         catch (Exception ex)
         {
