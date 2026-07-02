@@ -80,7 +80,16 @@ public static class ConfigDocument
         return results;
     }
 
-    /// <summary>Reads a single dotted path's leaf value, or null if the path does not resolve to a leaf.</summary>
+    /// <summary>
+    /// Reads a single dotted path's leaf value, or null if the path does not resolve to a present
+    /// scalar leaf. A JSON null leaf (and an absent key) both yield C# null - "no value" - rather
+    /// than the literal string "null": callers such as the setup wizard's Prefill treat any non-null
+    /// return as a real configured value, so returning "null" here would, for example, accidentally
+    /// enable inbound AUTH from a shipped <c>"AuthUsername": null</c>. (JSON null and an absent key
+    /// are indistinguishable at the <see cref="JsonObject"/> indexer level - both surface as C# null
+    /// - which is fine: neither is a configured value. Note <see cref="Flatten"/> still renders a
+    /// null leaf as "null" for display because it formats leaves directly, not via this method.)
+    /// </summary>
     public static string? GetPath(JsonObject section, string dottedPath)
     {
         ArgumentNullException.ThrowIfNull(section);
@@ -96,7 +105,7 @@ public static class ConfigDocument
             current = obj[segment];
         }
 
-        return current is JsonObject or JsonArray ? null : FormatLeaf(current);
+        return current is null or JsonObject or JsonArray ? null : FormatLeaf(current);
     }
 
     /// <summary>

@@ -239,6 +239,59 @@ public sealed class WizardCommandTests : IDisposable
     }
 
     [Fact]
+    public void JsonNullInboundAuth_HappyPath_DoesNotAccidentallyEnableInboundAuth()
+    {
+        // Regression: appsettings.json ships "AuthUsername": null / "AuthPassword": null. Prefill must
+        // read those JSON nulls as "no value", not the literal string "null" - otherwise walking the
+        // loopback happy path and saving would write AuthUsername="null"/AuthPassword="null" and
+        // silently enable inbound AUTH (IsInboundAuthConfigured => true), locking out legacy clients.
+        File.WriteAllText(
+            _configPath,
+            $$"""
+            {
+              "Gateway": {
+                "Smtp": { "BindEndpoints": [ "127.0.0.1:2525" ], "AuthUsername": null, "AuthPassword": null },
+                "SpoolDirectory": {{JsonSerializer.Serialize(Path.Combine(_root, "spool"))}},
+                "QueueDatabasePath": {{JsonSerializer.Serialize(Path.Combine(_root, "queue.db"))}},
+                "OutboundProvider": {
+                  "Provider": "GenericSmtp",
+                  "GenericSmtp": { "Host": "smtp.example.com", "Port": 587, "TlsMode": "StartTlsRequired", "AuthMode": "None" }
+                }
+              }
+            }
+            """);
+
+        var (exitCode, _) = Run(i =>
+        {
+            Enter(i);                 // page 1: bind endpoint (loopback default)
+            Enter(i);                 // page 1 nav: Next
+            Enter(i);                 // page 2: spool (default)
+            Enter(i);                 // page 2: queue db (default)
+            Enter(i);                 // page 2 nav: Next
+            Enter(i);                 // page 3: provider = GenericSmtp
+            Enter(i);                 // page 3: host (default)
+            Enter(i);                 // page 3: port (default)
+            Enter(i);                 // page 3: TLS mode (current first)
+            Enter(i);                 // page 3: auth mode = None (current first)
+            Enter(i);                 // page 3 nav: Next
+            Enter(i);                 // review: Save
+            i.PushTextWithEnter("n"); // provider test offer: no
+        });
+
+        Assert.Equal(0, exitCode);
+
+        // The literal string "null" must never be written as a credential.
+        var written = File.ReadAllText(_configPath);
+        Assert.DoesNotContain("\"null\"", written);
+
+        // Binding the saved file must yield no inbound auth.
+        var options = GatewayConfigLoader.Load(_configPath);
+        Assert.Null(options.Smtp.AuthUsername);
+        Assert.Null(options.Smtp.AuthPassword);
+        Assert.False(options.Smtp.ToSmtpGatewayOptions().IsInboundAuthConfigured);
+    }
+
+    [Fact]
     public void Prefill_ExistingValuesAppearAsDefaults_AndRoundTripOnSave()
     {
         WriteConfig("None", null, null, endpoint: "127.0.0.1:9099", host: "relay.prefill.test", tlsMode: "SslOnConnect");

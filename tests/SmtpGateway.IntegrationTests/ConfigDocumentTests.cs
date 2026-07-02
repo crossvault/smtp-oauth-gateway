@@ -90,6 +90,51 @@ public sealed class ConfigDocumentTests
     }
 
     [Fact]
+    public void GetPath_JsonNullLeaf_ReturnsClrNullNotTheStringNull()
+    {
+        // A JSON null leaf must be reported as "no value" (C# null), not the literal string "null".
+        // Otherwise callers (e.g. the setup wizard's Prefill) treat "null" as a real credential and
+        // accidentally enable inbound AUTH.
+        var section = new JsonObject
+        {
+            ["Smtp"] = new JsonObject { ["AuthUsername"] = null },
+        };
+
+        Assert.Null(ConfigDocument.GetPath(section, "Smtp:AuthUsername"));
+    }
+
+    [Fact]
+    public void GetPath_AbsentKey_ReturnsNull()
+    {
+        var section = new JsonObject { ["Smtp"] = new JsonObject() };
+
+        Assert.Null(ConfigDocument.GetPath(section, "Smtp:AuthUsername"));
+    }
+
+    [Fact]
+    public void GetPath_RealScalar_ReturnsItsStringValue()
+    {
+        var section = new JsonObject { ["Smtp"] = new JsonObject { ["AuthUsername"] = "operator" } };
+
+        Assert.Equal("operator", ConfigDocument.GetPath(section, "Smtp:AuthUsername"));
+    }
+
+    [Fact]
+    public void Flatten_JsonNullLeaf_StillRendersAsTheStringNull()
+    {
+        // 'config show' (Flatten) intentionally renders a JSON null leaf as "null" for display; the
+        // GetPath change must not alter that behavior.
+        var section = new JsonObject
+        {
+            ["Smtp"] = new JsonObject { ["AuthUsername"] = null },
+        };
+
+        var rows = ConfigDocument.Flatten(section);
+
+        Assert.Contains(("Smtp:AuthUsername", "null"), rows);
+    }
+
+    [Fact]
     public void Flatten_ReturnsEverySortedLeafPath()
     {
         var section = new JsonObject
