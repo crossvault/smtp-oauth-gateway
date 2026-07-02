@@ -29,7 +29,10 @@ cap cannot be raised by configuration - 5 days is the ceiling in this version.
 
 | Key | Type | Default | Validation | Meaning |
 |---|---|---|---|---|
-| `BindEndpoints` | string array | `[]` (empty - must be set explicitly) | `[MinLength(1)]`, plus format-parsed (`SmtpBindEndpointParser`) during startup validation | Loopback bind endpoints, e.g. `"127.0.0.1:2525"` or `"[::1]:2525"`. Deliberately defaults to empty rather than a pre-populated port, because `Microsoft.Extensions.Configuration`'s array binding *appends* to a non-empty default instead of replacing it - a non-empty compile-time default would silently keep listening on it alongside whatever is configured. |
+| `BindEndpoints` | string array | `[]` (empty - must be set explicitly) | `[MinLength(1)]`, plus format-parsed (`SmtpBindEndpointParser`) during startup validation | Bind endpoints, e.g. `"127.0.0.1:2525"` or `"[::1]:2525"`. Loopback-only unless `AllowNonLoopbackBind` is `true` (see below). Deliberately defaults to empty rather than a pre-populated port, because `Microsoft.Extensions.Configuration`'s array binding *appends* to a non-empty default instead of replacing it - a non-empty compile-time default would silently keep listening on it alongside whatever is configured. |
+| `AllowNonLoopbackBind` | bool | `false` | none (policy enforced by `LoopbackEndpointValidator` when the listener is constructed) | When `false` (default), any non-loopback bind endpoint - a specific LAN IP **or** a wildcard (`0.0.0.0` / `[::]`) - fails the service startup. Set `true` to deliberately permit a network-reachable bind; the service then logs unmissable startup security warnings (see [docs/security.md](security.md)). |
+| `AuthUsername` | string? | `null` | Both-or-neither: setting exactly one of `AuthUsername`/`AuthPassword` is a startup configuration error (`GatewayOptionsValidator`) | Optional inbound SMTP AUTH username. When **both** `AuthUsername` and `AuthPassword` are set, inbound SMTP AUTH (PLAIN/LOGIN) is enabled **and required** for every session (loopback included: correct creds `235`, wrong `535`, `MAIL` before `AUTH` `530`). Leave both empty for no inbound auth (unchanged behavior). |
+| `AuthPassword` | string? | `null` | Both-or-neither (see `AuthUsername`); never logged | Optional inbound SMTP AUTH password. The inbound listener has **no STARTTLS**, so on a non-loopback bind these credentials cross the network in cleartext (see [docs/security.md](security.md)). |
 | `ServerName` | string | `"smtpoauth"` | none | The SMTP server name presented in the banner/EHLO response. |
 | `MaxMessageSizeBytes` | int | `26214400` (25 MB) | `[Range(1, int.MaxValue)]` | Maximum accepted message size; larger messages are rejected at `DATA` time. |
 | `MaxRecipients` | int | `100` | `[Range(1, int.MaxValue)]` | Maximum recipients per mail; additional `RCPT TO` commands beyond this are rejected one at a time (the transaction isn't aborted). |
@@ -37,12 +40,13 @@ cap cannot be raised by configuration - 5 days is the ceiling in this version.
 
 **Bind endpoints are only IP literals** - no hostname resolution - and only the format is checked
 at startup validation time (`config validate` / `ValidateOnStart`). The **loopback-only**
-enforcement (rejecting anything that isn't `127.0.0.1`/`::1`) happens later, when the SMTP listener
-is actually constructed at service startup (`LoopbackEndpointValidator`, inside
-`SmtpGatewayListener`) - so a non-loopback bind address currently passes `config validate` but
-fails when the service actually tries to start the listener. There is no configurable inbound SMTP
-AUTH, TLS/STARTTLS, per-connection rate limit, or concurrent-connection cap in this version - see
-[docs/security.md](security.md).
+enforcement (rejecting anything that isn't `127.0.0.1`/`::1` when `AllowNonLoopbackBind` is `false`)
+happens later, when the SMTP listener is actually constructed at service startup
+(`LoopbackEndpointValidator`, inside `SmtpGatewayListener`) - so a non-loopback bind address with the
+flag left off currently passes `config validate` but fails when the service actually tries to start
+the listener. Inbound SMTP AUTH is configurable via `AuthUsername`/`AuthPassword` (above), but there
+is no inbound TLS/STARTTLS, per-connection rate limit, or concurrent-connection cap in this
+version - see [docs/security.md](security.md).
 
 ## `Gateway:OutboundProvider` (`OutboundProviderOptions`)
 

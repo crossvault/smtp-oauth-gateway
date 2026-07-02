@@ -21,6 +21,17 @@ public static class GatewayOptionsValidator
         // surfacing later as an obscure listener construction failure.
         SmtpBindEndpointParser.ParseAll(options.Smtp.BindEndpoints);
 
+        // Inbound AUTH credentials are all-or-nothing: both empty disables AUTH, both set enables and
+        // requires it. Exactly one is an operator mistake that would otherwise silently leave AUTH off.
+        var hasUsername = !string.IsNullOrWhiteSpace(options.Smtp.AuthUsername);
+        var hasPassword = !string.IsNullOrWhiteSpace(options.Smtp.AuthPassword);
+        if (hasUsername != hasPassword)
+        {
+            throw new InvalidOperationException(
+                "Inbound SMTP AUTH is misconfigured: set both Smtp:AuthUsername and Smtp:AuthPassword to " +
+                "enable authentication, or leave both empty to disable it.");
+        }
+
         // A configured SenderRewriteAddress is parsed with MailboxAddress.Parse at delivery time
         // (OutboundDeliveryWorker.RewriteFromHeaderAsync); if it were malformed the failure would
         // otherwise surface only later as a per-item delivery error. Validate it here so a bad

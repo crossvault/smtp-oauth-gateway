@@ -1,27 +1,44 @@
 # Security model
 
-## Inbound: loopback-only, no local authentication, no local TLS
+## Inbound: loopback-only by default, opt-in non-loopback, optional AUTH, no local TLS
 
-- **Loopback-only binding.** `Gateway:Smtp:BindEndpoints` must resolve to `127.0.0.1` and/or
-  `::1`; `LoopbackEndpointValidator` refuses to construct the SMTP listener on anything else. This
-  check runs when the listener is actually built at service startup, so it fails the whole service
-  startup (logged `Critical`, non-zero exit) rather than silently binding to an unsafe address. The
-  gateway is not, and cannot be configured as, an SMTP server reachable from the network - it is
-  purely a local relay for processes on the same machine.
-- **No local SMTP authentication.** `AuthenticationRequired(false)` is hardcoded in
-  `SmtpGatewayListener` - there is no configuration option to require an inbound username/password
-  or any other credential for a local client to submit mail. This is safe *because* of the
-  loopback-only guarantee above: anything that can reach the listener at all is already running on
-  the same machine (or has been given access to it via a container/VM boundary the operator
-  controls), which is the same trust boundary an operator implicitly grants any other local-only
-  service.
-- **No local STARTTLS.** The inbound listener never negotiates TLS with the connecting legacy
-  client - traffic between the legacy application and the gateway is plaintext SMTP. This is an
-  explicit MVP scope decision: since the connection never leaves loopback, this is not an
-  interception risk in the way a LAN-facing SMTP session would be, but this design does mean any
-  message content is momentarily plaintext-observable to anything with the ability to read
-  loopback traffic on the host (e.g. another process with `NET_ADMIN`/packet-capture rights) - the
-  same assumption already implied by the loopback trust boundary.
+- **Loopback-only binding by default.** By default `Gateway:Smtp:BindEndpoints` must resolve to
+  `127.0.0.1` and/or `::1`; `LoopbackEndpointValidator` refuses to construct the SMTP listener on
+  anything else (a specific LAN IP **or** a wildcard `0.0.0.0` / `[::]`, both of which it classifies
+  as non-loopback). This check runs when the listener is actually built at service startup, so it
+  fails the whole service startup (logged `Critical`, non-zero exit) rather than silently binding to
+  an unsafe address, and the startup error names the flag that overrides it. Kept at the default,
+  the gateway is purely a local relay for processes on the same machine.
+- **Opt-in non-loopback binding (`Smtp:AllowNonLoopbackBind`).** Setting this flag to `true`
+  deliberately permits both specific LAN IPs and wildcard binds. It is an explicit operator choice,
+  not an accident: when any non-loopback endpoint is active the service emits an unmissable startup
+  **warning matrix** (all `LogWarning`, so they cannot be filtered below the normal level):
+  1. **Network-reachable.** Whenever a non-loopback endpoint is bound, the service warns that it is
+     reachable from the network, not just this host.
+  2. **No AUTH (relay risk).** If non-loopback **and** no inbound AUTH is configured, it warns
+     strongly that any host that can reach the port can submit mail through the gateway to your
+     outbound provider - i.e. an open relay to whoever can reach it.
+  3. **AUTH but cleartext.** If non-loopback **and** inbound AUTH is configured, it warns that the
+     inbound listener has **no STARTTLS by design**, so the AUTH credentials cross the network in
+     **cleartext** and the endpoint must be restricted to a trusted network.
+- **Optional, all-or-nothing inbound SMTP AUTH.** `Smtp:AuthUsername` and `Smtp:AuthPassword` are
+  empty by default (no inbound authentication). When **both** are set, inbound SMTP AUTH
+  (PLAIN/LOGIN) is enabled **and required** for *every* session - loopback included: a session must
+  authenticate before `MAIL FROM` (an unauthenticated `MAIL` is rejected `530`), correct credentials
+  return `235`, and wrong credentials `535`. Setting exactly one of the two is a startup
+  configuration error (`GatewayOptionsValidator`) rather than silently leaving AUTH off. Credentials
+  are compared with `CryptographicOperations.FixedTimeEquals` (constant-time) and the password is
+  never logged. This is optional-but-recommended when you bind a network address; on loopback the
+  default (no AUTH) remains safe because reaching the listener already means running on the host.
+- **No local STARTTLS.** The inbound listener never negotiates TLS with the connecting client -
+  traffic between the client and the gateway is plaintext SMTP, and (as warning 3 above states) so
+  are any inbound AUTH credentials. On loopback this is not an interception risk in the way a
+  LAN-facing SMTP session would be, but it does mean message content (and any AUTH credentials) is
+  plaintext-observable to anything able to read the relevant traffic - trivially so on a network
+  segment, or on the host to a process with `NET_ADMIN`/packet-capture rights. **Recommendation:**
+  keep the listener loopback-only wherever possible; if you must bind a network address, configure
+  `AuthUsername`/`AuthPassword`, treat those credentials as sniffable on that segment, and restrict
+  the port to the specific source host(s) with **Windows Firewall**.
 - **Recipient/size limits reject, never degrade.** `MaxRecipients` and `MaxMessageSizeBytes` are
   enforced by outright rejecting the offending command/transaction - there is no silent truncation
   or partial acceptance.
@@ -82,8 +99,11 @@ operator to configure, rather than being a gateway responsibility or a hardcoded
 
 ## Known non-goals
 
-- No open-relay protection is needed beyond loopback-only binding, because there is no path for a
-  remote client to ever reach the listener.
+- No dedicated open-relay protection exists beyond the default loopback-only binding: at the
+  default there is no path for a remote client to reach the listener at all. If you opt in to a
+  non-loopback bind (`Smtp:AllowNonLoopbackBind`), that protection is on you - configure inbound
+  AUTH (`AuthUsername`/`AuthPassword`) and firewall the port, as the startup warning matrix spells
+  out above.
 - No HTTP health-check endpoint, named-pipe status API, or metrics endpoint exists - status is
   exposed only via the Admin TUI, the SQLite queue file, and the logs (see
   [docs/operations.md](operations.md)).

@@ -18,13 +18,30 @@ internal static class TuiTestRunner
 {
     private static readonly object ConsoleLock = new();
 
-    public static (int ExitCode, string Output) Run(params string[] args)
+    public static (int ExitCode, string Output) Run(params string[] args) => Run(null, args);
+
+    /// <summary>
+    /// Runs the command tree, optionally scripting interactive prompt input first (for prompt-driven
+    /// commands like the 'setup' wizard). When <paramref name="scriptInput"/> is non-null the test
+    /// console is marked interactive and the callback pushes keystrokes/text onto its input queue in
+    /// the exact order the command's prompts will consume them.
+    /// </summary>
+    public static (int ExitCode, string Output) Run(
+        Action<Spectre.Console.Testing.TestConsoleInput>? scriptInput,
+        params string[] args)
     {
         lock (ConsoleLock)
         {
             // A generous width avoids Spectre wrapping GUID-length cells (e.g. the queue item id
             // column) across multiple lines, which would otherwise break substring assertions.
             var testConsole = new Spectre.Console.Testing.TestConsole { Profile = { Width = 300 } };
+            if (scriptInput is not null)
+            {
+                // SelectionPrompt/TextPrompt refuse to run on a non-interactive terminal.
+                testConsole.Profile.Capabilities.Interactive = true;
+                scriptInput(testConsole.Input);
+            }
+
             var originalConsole = AnsiConsole.Console;
             AnsiConsole.Console = testConsole;
             try
@@ -33,6 +50,39 @@ internal static class TuiTestRunner
                 tester.Configure(AdminTuiApp.Configure);
                 var result = tester.Run(args);
                 return (result.ExitCode, testConsole.Output);
+            }
+            finally
+            {
+                AnsiConsole.Console = originalConsole;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Runs the no-args interactive shell (<see cref="InteractiveShell.RunAsync(string?, CancellationToken)"/>)
+    /// against the same redirected, scripted <see cref="Spectre.Console.Testing.TestConsole"/>. The
+    /// shell bypasses <c>CommandApp</c>, so this is a parallel entry point to <see cref="Run"/>; the
+    /// console is always marked interactive because the shell is built entirely from
+    /// SelectionPrompts, which refuse to run on a non-interactive terminal.
+    /// </summary>
+    public static (int ExitCode, string Output) RunShell(
+        Action<Spectre.Console.Testing.TestConsoleInput> scriptInput,
+        string? configPath)
+    {
+        ArgumentNullException.ThrowIfNull(scriptInput);
+
+        lock (ConsoleLock)
+        {
+            var testConsole = new Spectre.Console.Testing.TestConsole { Profile = { Width = 300 } };
+            testConsole.Profile.Capabilities.Interactive = true;
+            scriptInput(testConsole.Input);
+
+            var originalConsole = AnsiConsole.Console;
+            AnsiConsole.Console = testConsole;
+            try
+            {
+                var exitCode = InteractiveShell.RunAsync(configPath).GetAwaiter().GetResult();
+                return (exitCode, testConsole.Output);
             }
             finally
             {

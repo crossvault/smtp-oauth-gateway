@@ -29,9 +29,16 @@ public disclosure. We will keep you updated on progress.
 Some properties of this gateway are deliberate design decisions, documented in
 [docs/security.md](docs/security.md), and are **not** vulnerabilities:
 
-- The gateway **binds to loopback only** (`127.0.0.1` / `::1`) and refuses to
-  start on any other address. It is a local relay, not a network-reachable SMTP
-  server, and has no inbound authentication by design.
+- The gateway **binds to loopback only by default** (`127.0.0.1` / `::1`) and
+  refuses to start on any other address unless an operator explicitly opts in with
+  `Smtp:AllowNonLoopbackBind`. Unauthenticated inbound submission **on loopback**
+  is by design (reaching the listener already means running on the host). When an
+  operator deliberately binds a network address, the service logs unmissable
+  startup warnings, and optional inbound SMTP AUTH (`Smtp:AuthUsername` /
+  `Smtp:AuthPassword`) is available and recommended - though, since the inbound
+  listener has no STARTTLS, those credentials cross the network in cleartext, so
+  the port should also be firewalled to trusted hosts. See
+  [docs/security.md](docs/security.md).
 - **Secrets live in `appsettings.json` in cleartext by documented design.** This
   is an explicit MVP simplicity decision; protect the file with normal Windows
   filesystem permissions. See [docs/security.md](docs/security.md) for the full

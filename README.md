@@ -55,12 +55,33 @@ find, among other things:
 
 You do **not** need to install .NET or anything else - everything is included.
 
-### 3. Edit the configuration file
+### 3. Fill in the configuration
 
-Open `service\appsettings.json` in a text editor (Notepad is fine). The file that ships in the ZIP
-has every option filled in with comments; you only need to fill in the details for **one** way of
-sending. Here is the smallest configuration that works, for the most common case - sending through
-Microsoft 365 with Microsoft Graph:
+SmtpGateway is configured by a single file, `service\appsettings.json`. There are two ways to fill
+it in: let the admin tool's guided wizard do it (easiest), or edit the file by hand.
+
+**Option A (recommended): the setup wizard.** Run the admin tool with the `setup` command - this
+does **not** need an elevated/Administrator terminal, since it only writes a configuration file:
+
+```powershell
+C:\SmtpGateway\tui\SmtpGateway.Admin.Tui.exe setup --config C:\SmtpGateway\service\appsettings.json
+```
+
+The wizard walks you through three short pages - inbound listening (just keep the default
+`127.0.0.1:2525`), the storage locations, and your outbound provider (Graph / M365Oauth /
+GenericSmtp and that provider's fields) - then shows a review page. Press **Save** and it writes
+`service\appsettings.json` for you and reminds you a service restart is needed; **Cancel** writes
+nothing. If the file already exists, its current values are offered as defaults and the whole file
+is rewritten on Save (no backup is kept).
+
+> The `--config` above points the wizard at the service's own `service\appsettings.json`. Without
+> it, the tool reads and writes an `appsettings.json` in the current directory instead (i.e. next to
+> the `tui\` executable), which is **not** the file the service uses.
+
+**Option B: edit the file by hand.** Open `service\appsettings.json` in a text editor (Notepad is
+fine). The file that ships in the ZIP has every option filled in with comments; you only need to
+fill in the details for **one** way of sending. Here is the smallest configuration that works, for
+the most common case - sending through Microsoft 365 with Microsoft Graph:
 
 ```json
 {
@@ -142,6 +163,11 @@ message without your application), see [docs/smoke-test.md](docs/smoke-test.md).
 > `--config C:\SmtpGateway\service\appsettings.json` to each command. In its own help text the tool
 > calls itself `smtpgw-admin`.
 
+> Tip: running `SmtpGateway.Admin.Tui.exe` with **no arguments** opens an interactive menu (with a
+> dashboard, queue browser, configuration view, first-time setup, and provider test) - handy for
+> exploring without remembering command names. Every command shown above still works exactly as
+> written when you pass arguments, so scripting is unaffected.
+
 ### When something goes wrong
 
 - The service won't start, nothing gets accepted, or messages sit in the queue and never send:
@@ -154,7 +180,7 @@ message without your application), see [docs/smoke-test.md](docs/smoke-test.md).
 ## What it is and how it works (for technical readers)
 
 SmtpGateway is a send-only outbound relay. It is **not** a mail server: no POP3, no IMAP, no
-inbound mailbox storage. It accepts mail on a loopback-only SMTP listener, writes each message
+inbound mailbox storage. It accepts mail on a loopback-only (by default) SMTP listener, writes each message
 durably to a file spool **and** a SQLite queue, returns `250 OK` only once **both** are committed,
 and then a background worker delivers each message through exactly one configured provider with
 retry and backoff.
@@ -184,8 +210,15 @@ retry and backoff.
 
 ### Features
 
-- **Loopback-only inbound.** The listener only ever binds to `127.0.0.1` / `::1` and refuses to
-  start on any other address - it cannot be turned into a network-reachable open relay.
+- **Loopback-only inbound by default.** The listener binds to `127.0.0.1` / `::1` and refuses to
+  start on any other address unless you explicitly opt in with `Smtp:AllowNonLoopbackBind`. Binding
+  to a LAN/wildcard address is possible but deliberately gated, logs unmissable startup security
+  warnings, and should be paired with the optional inbound SMTP AUTH (see
+  "Binding to a network address (advanced)" below and [docs/security.md](docs/security.md)).
+- **Optional inbound SMTP AUTH.** Set `Smtp:AuthUsername` **and** `Smtp:AuthPassword` to require
+  every inbound session to authenticate (PLAIN/LOGIN); leave both empty (the default) for no inbound
+  auth. Intended mainly for a network-bound listener - note the inbound listener has no STARTTLS, so
+  those credentials cross the network in cleartext.
 - **Durable, at-least-once delivery.** Spool file + SQLite queue; `250 OK` only after both commit;
   retry/backoff with per-recipient delivery status and a queue TTL (capped at 5 days).
 - **Three outbound providers, exactly one active:**
@@ -197,6 +230,29 @@ retry and backoff.
   queue inspection/retry/discard/export, config view/edit/validate, and a live provider test.
 - **Self-contained.** Ships as a win-x64 ZIP; end users never install .NET.
 - Optional spool-size backpressure and outbound rate limiting.
+
+### Binding to a network address (advanced)
+
+> The recommended and default setup keeps the listener on loopback (`127.0.0.1`) - the beginner
+> steps above already do this, and most deployments never need to change it. Only read on if a
+> legacy client on **another** host must reach the gateway.
+
+By default the gateway refuses to bind anything but `127.0.0.1` / `::1`, and the startup error names
+the flag that overrides this. To listen on a specific LAN IP or a wildcard (`0.0.0.0` / `[::]`):
+
+1. Set `Gateway:Smtp:AllowNonLoopbackBind` to `true` and list the network endpoint in
+   `BindEndpoints` (e.g. `"192.168.1.10:2525"`). The service then logs an unmissable startup
+   **WARNING** that it is reachable from the network.
+2. **Configure inbound SMTP AUTH** (recommended, not enforced): set both `Smtp:AuthUsername` and
+   `Smtp:AuthPassword` so an unauthenticated host cannot relay mail through your provider. Without
+   it, anyone who can reach the port is an open relay.
+3. Be aware the inbound listener has **no STARTTLS**: those AUTH credentials (and message content)
+   cross the network in **cleartext**. Treat them as sniffable on that network segment.
+4. Restrict the port to the specific source host(s) with **Windows Firewall**.
+
+As with every configuration change, a service restart is required. See
+[docs/security.md](docs/security.md) for the full warning matrix and
+[docs/configuration.md](docs/configuration.md) for the exact keys and validation rules.
 
 ### Documentation
 
@@ -216,6 +272,8 @@ retry and backoff.
 ### The admin tool at a glance
 
 ```
+smtpgw-admin                        # no arguments: open the interactive menu (dashboard, queue, config, setup, test)
+smtpgw-admin setup                  # first-install wizard: fill in appsettings.json (inbound, storage, provider)
 smtpgw-admin status                 # queue and provider status dashboard
 smtpgw-admin queue list             # list queue items (filter with --status)
 smtpgw-admin queue show <id>        # full detail for one item
@@ -262,8 +320,10 @@ for known vulnerabilities on `windows-latest`.
 
 Delivery is **at-least-once**, so a message can in rare crash/retry scenarios be delivered more than
 once - do not use SmtpGateway where exactly-once delivery is required. Inbound is **loopback-only by
-design** and cannot be exposed to the network. The service is **Windows-only** (it relies on Windows
-Service hosting and publishes as win-x64). See [docs/queue.md](docs/queue.md) and
+default**; it can be bound to a network address only via the explicit `Smtp:AllowNonLoopbackBind`
+opt-in, which is strongly discouraged unless you also configure inbound SMTP AUTH and firewall the
+port (see [docs/security.md](docs/security.md)). The service is **Windows-only** (it relies on
+Windows Service hosting and publishes as win-x64). See [docs/queue.md](docs/queue.md) and
 [docs/security.md](docs/security.md) for the precise guarantees.
 
 ## Contributing
