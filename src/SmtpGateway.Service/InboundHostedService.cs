@@ -34,8 +34,18 @@ public sealed class InboundHostedService : BackgroundService
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
+        var smtpOptions = _options.Smtp.ToSmtpGatewayOptions();
+
+        // Emit the network-reachability / open-relay / cleartext-AUTH warnings before starting, so an
+        // operator who deliberately allowed a non-loopback bind sees them at startup. Loopback-only
+        // binds (the default) produce no non-loopback endpoints and therefore no warnings.
+        StartupBindingWarnings.Log(
+            _lifecycleLogger,
+            LoopbackEndpointValidator.GetNonLoopbackEndpoints(smtpOptions.BindEndpoints),
+            smtpOptions.IsInboundAuthConfigured);
+
         await using var listener = new SmtpGatewayListener(
-            _options.Smtp.ToSmtpGatewayOptions(), _spool, _repository, _options.MaxSpoolBytes, _loggerFactory);
+            smtpOptions, _spool, _repository, _options.MaxSpoolBytes, _loggerFactory);
 
         try
         {

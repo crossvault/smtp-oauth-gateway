@@ -38,19 +38,9 @@ public sealed class QueueExportCommand : AsyncCommand<QueueItemIdSettings>
             return 1;
         }
 
-        var spool = new FileSpool(options.SpoolDirectory);
-        var rawMime = await spool.ReadAsync(item.MimePath, cancellationToken);
+        var fullPath = await QueueExportAction.ExportAsync(options, item, cancellationToken);
 
-        var exportPath = ExportPathBuilder.BuildPath(id);
-        var exportDirectory = Path.GetDirectoryName(exportPath);
-        if (!string.IsNullOrEmpty(exportDirectory))
-        {
-            Directory.CreateDirectory(exportDirectory);
-        }
-
-        await File.WriteAllBytesAsync(exportPath, rawMime, cancellationToken);
-
-        AnsiConsole.MarkupLineInterpolated($"[green]Queue item '{id}' exported to '{Path.GetFullPath(exportPath)}'.[/]");
+        AnsiConsole.MarkupLineInterpolated($"[green]Queue item '{id}' exported to '{fullPath}'.[/]");
         return 0;
     }
 }
