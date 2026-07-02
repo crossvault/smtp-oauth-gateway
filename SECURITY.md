@@ -11,7 +11,10 @@ release before reporting an issue.
 Please report security vulnerabilities **privately**. Do **not** open a public
 GitHub issue, pull request, or discussion for a suspected vulnerability.
 
-Email **security@crossvault.de** with the details. Please include:
+Use GitHub's **private vulnerability reporting**: go to the repository's
+[**Security** tab -> **Report a vulnerability**](https://github.com/crossvault/smtp-oauth-gateway/security/advisories/new)
+and submit the report there. It reaches the maintainers privately without any
+email involved. Please include:
 
 - A description of the vulnerability and the impact you believe it has.
 - The affected version (the ZIP version you are running).

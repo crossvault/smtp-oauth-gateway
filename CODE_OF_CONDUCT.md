@@ -59,8 +59,11 @@ representative at an online or offline event.
 ## Enforcement
 
 Instances of abusive, harassing, or otherwise unacceptable behavior may be
-reported to the community leaders responsible for enforcement at
-conduct@crossvault.de.
+reported to the community leaders responsible for enforcement by
+[opening an issue](https://github.com/crossvault/smtp-oauth-gateway/issues/new/choose)
+in this repository addressed to the maintainers. If the matter is sensitive and
+you prefer not to describe it publicly, state only that in the issue and a
+maintainer will arrange a private channel with you.
 All complaints will be reviewed and investigated promptly and fairly.
 
 All community leaders are obligated to respect the privacy and security of the
