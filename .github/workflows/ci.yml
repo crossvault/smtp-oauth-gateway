@@ -5,13 +5,19 @@ on:
     branches: [main]
   pull_request:
 
+# Least-privilege default: this workflow only checks out the repo and runs build/test. It never
+# writes contents, publishes packages, or updates checks/PRs, so read-only is sufficient. The
+# GITHUB_TOKEN is dropped to contents: read for every job below.
+permissions:
+  contents: read
+
 jobs:
   build-test:
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
-      - uses: actions/setup-dotnet@v5
+      - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5.4.0
         with:
           global-json-file: global.json
 
@@ -24,12 +30,35 @@ jobs:
       # Test each product test project explicitly rather than the whole solution: this keeps the
       # live SmtpGateway.E2ETests project (which needs a real O365 tenant via a gitignored .env)
       # out of CI entirely. The solution still builds it above, so CI verifies it compiles.
-      - name: Test
+      #
+      # Each project emits its own Cobertura report via the Microsoft.Testing.Platform CodeCoverage
+      # collector (args after `--` go to the test app). tests/coverage.settings.xml scopes the
+      # measurement to the four product assemblies only (test assemblies and third-party deps are
+      # excluded there). The reports are merged and gated in the next step.
+      - name: Test with coverage
         shell: pwsh
-        run: >
-          dotnet test tests/SmtpGateway.Core.Tests --configuration Release --no-build &&
-          dotnet test tests/SmtpGateway.Infrastructure.Tests --configuration Release --no-build &&
-          dotnet test tests/SmtpGateway.IntegrationTests --configuration Release --no-build
+        run: |
+          $settings = Join-Path $PWD 'tests/coverage.settings.xml'
+          $out = Join-Path $PWD 'artifacts/coverage'
+          New-Item -ItemType Directory -Force -Path $out | Out-Null
+          $projects = [ordered]@{
+            'Core'           = 'tests/SmtpGateway.Core.Tests'
+            'Infrastructure' = 'tests/SmtpGateway.Infrastructure.Tests'
+            'Integration'    = 'tests/SmtpGateway.IntegrationTests'
+          }
+          foreach ($name in $projects.Keys) {
+            $output = Join-Path $out "$name.cobertura.xml"
+            dotnet test $projects[$name] --configuration Release --no-build `
+              -- --coverage --coverage-settings $settings `
+                 --coverage-output-format cobertura --coverage-output $output
+            if ($LASTEXITCODE -ne 0) { throw "Tests failed for $($projects[$name]) (exit $LASTEXITCODE)" }
+          }
+
+      # Merge the per-project Cobertura reports (deduplicating shared product assemblies) and fail
+      # the build if total line coverage drops below the documented 75% floor.
+      - name: Enforce coverage gate
+        shell: pwsh
+        run: ./scripts/check-coverage.ps1
 
       - name: NuGet vulnerability audit
         run: dotnet list package --vulnerable --include-transitive

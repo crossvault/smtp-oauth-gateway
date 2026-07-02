@@ -15,6 +15,12 @@ concurrency:
   group: e2e-live
   cancel-in-progress: false
 
+# Least-privilege default: this workflow only checks out, builds and runs the live E2E tests. It
+# needs no write scopes on the GITHUB_TOKEN (the O365 credentials come from Actions secrets mapped
+# to env below, not from the token), so read-only is sufficient.
+permissions:
+  contents: read
+
 jobs:
   e2e:
     runs-on: windows-latest
@@ -47,10 +53,10 @@ jobs:
             "configured=true" >> $env:GITHUB_OUTPUT
           }
 
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         if: steps.gate.outputs.configured == 'true'
 
-      - uses: actions/setup-dotnet@v5
+      - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5.4.0
         if: steps.gate.outputs.configured == 'true'
         with:
           global-json-file: global.json
