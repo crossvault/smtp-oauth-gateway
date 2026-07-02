@@ -1,3 +1,24 @@
 # Local agent context
 agent/docs/
 agent/memory/
+
+# .NET build output
+bin/
+obj/
+*.user
+TestResults/
+
+# Release packaging output (build-release.ps1); SBOM/notices are regenerated fresh per release,
+# never a source-of-truth file to commit
+artifacts/
+/SBOM.json
+/THIRD-PARTY-NOTICES.txt
+
+# appsettings with local secrets (sample stays in repo)
+appsettings.Local.json
+__test.md
+
+# Live E2E test credentials (O365 sandbox tenant) - never commit, .env.example documents the shape
+.env
+.env.*
+!.env.example

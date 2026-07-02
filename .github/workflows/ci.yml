@@ -1,0 +1,35 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build-test:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+
+      - name: Restore
+        run: dotnet restore
+
+      - name: Build
+        run: dotnet build --configuration Release --no-restore
+
+      # Test each product test project explicitly rather than the whole solution: this keeps the
+      # live SmtpGateway.E2ETests project (which needs a real O365 tenant via a gitignored .env)
+      # out of CI entirely. The solution still builds it above, so CI verifies it compiles.
+      - name: Test
+        shell: pwsh
+        run: >
+          dotnet test tests/SmtpGateway.Core.Tests --configuration Release --no-build &&
+          dotnet test tests/SmtpGateway.Infrastructure.Tests --configuration Release --no-build &&
+          dotnet test tests/SmtpGateway.IntegrationTests --configuration Release --no-build
+
+      - name: NuGet vulnerability audit
+        run: dotnet list package --vulnerable --include-transitive

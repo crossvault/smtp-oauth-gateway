@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <IsPackable>false</IsPackable>
+    <OutputType>Exe</OutputType>
+    <UseMicrosoftTestingPlatformRunner>true</UseMicrosoftTestingPlatformRunner>
+    <TestingPlatformDotnetTestSupport>true</TestingPlatformDotnetTestSupport>
+    <!-- These are live-network tests that legitimately bound each provider call with an
+         explicit timeout CancellationTokenSource (linked to the test's own token), so
+         xUnit1051 ("use TestContext.Current.CancellationToken") does not apply here. -->
+    <NoWarn>$(NoWarn);xUnit1051</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="MailKit" />
+    <PackageReference Include="MimeKit" />
+    <PackageReference Include="xunit.v3" />
+    <PackageReference Include="Microsoft.Testing.Extensions.CodeCoverage" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\SmtpGateway.Core\SmtpGateway.Core.csproj" />
+    <ProjectReference Include="..\..\src\SmtpGateway.Infrastructure\SmtpGateway.Infrastructure.csproj" />
+  </ItemGroup>
+
+</Project>

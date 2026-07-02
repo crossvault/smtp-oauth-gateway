@@ -1,0 +1,27 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <IsPackable>false</IsPackable>
+    <OutputType>Exe</OutputType>
+    <UseMicrosoftTestingPlatformRunner>true</UseMicrosoftTestingPlatformRunner>
+    <TestingPlatformDotnetTestSupport>true</TestingPlatformDotnetTestSupport>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="MailKit" />
+    <PackageReference Include="MimeKit" />
+    <PackageReference Include="Spectre.Console.Cli.Testing" />
+    <PackageReference Include="Spectre.Console.Testing" />
+    <PackageReference Include="xunit.v3" />
+    <PackageReference Include="Microsoft.Testing.Extensions.CodeCoverage" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\SmtpGateway.Admin.Tui\SmtpGateway.Admin.Tui.csproj" />
+    <ProjectReference Include="..\..\src\SmtpGateway.Core\SmtpGateway.Core.csproj" />
+    <ProjectReference Include="..\..\src\SmtpGateway.Infrastructure\SmtpGateway.Infrastructure.csproj" />
+    <ProjectReference Include="..\..\src\SmtpGateway.Service\SmtpGateway.Service.csproj" />
+  </ItemGroup>
+
+</Project>

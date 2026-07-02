@@ -1,0 +1,14 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/SmtpGateway.Admin.Tui/SmtpGateway.Admin.Tui.csproj" />
+    <Project Path="src/SmtpGateway.Core/SmtpGateway.Core.csproj" />
+    <Project Path="src/SmtpGateway.Infrastructure/SmtpGateway.Infrastructure.csproj" />
+    <Project Path="src/SmtpGateway.Service/SmtpGateway.Service.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/SmtpGateway.Core.Tests/SmtpGateway.Core.Tests.csproj" />
+    <Project Path="tests/SmtpGateway.Infrastructure.Tests/SmtpGateway.Infrastructure.Tests.csproj" />
+    <Project Path="tests/SmtpGateway.IntegrationTests/SmtpGateway.IntegrationTests.csproj" />
+    <Project Path="tests/SmtpGateway.E2ETests/SmtpGateway.E2ETests.csproj" />
+  </Folder>
+</Solution>

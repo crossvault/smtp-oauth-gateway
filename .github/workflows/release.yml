@@ -1,0 +1,96 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to build (e.g. "1.2.3"), used when running manually instead of from a tag'
+        required: true
+        type: string
+
+# Needed so the job can create a GitHub Release and upload assets to it via `gh`.
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+
+      # Release artifacts should never be built from an untested state: restore/build/test
+      # first, exactly like ci.yml, before any packaging happens.
+      - name: Restore
+        run: dotnet restore
+
+      - name: Build
+        run: dotnet build --configuration Release --no-restore
+
+      # Test each product test project explicitly (mirrors ci.yml): keeps the live
+      # SmtpGateway.E2ETests project (real O365 tenant via a gitignored .env) out of the release
+      # gate while the solution build above still verifies it compiles.
+      - name: Test
+        shell: pwsh
+        run: >
+          dotnet test tests/SmtpGateway.Core.Tests --configuration Release --no-build &&
+          dotnet test tests/SmtpGateway.Infrastructure.Tests --configuration Release --no-build &&
+          dotnet test tests/SmtpGateway.IntegrationTests --configuration Release --no-build
+
+      - name: Determine version
+        id: version
+        shell: pwsh
+        run: |
+          if ("${{ github.event_name }}" -eq "workflow_dispatch") {
+            $version = "${{ inputs.version }}"
+          }
+          else {
+            # Strip the "refs/tags/" prefix and an optional leading "v" from the tag name.
+            $tag = "${{ github.ref_name }}"
+            $version = $tag -replace '^v', ''
+          }
+          Write-Host "Resolved version: $version"
+          "version=$version" >> $env:GITHUB_OUTPUT
+
+      - name: Build release package
+        shell: pwsh
+        run: ./build-release.ps1 -Version "${{ steps.version.outputs.version }}"
+
+      - name: Upload workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: SmtpGateway-${{ steps.version.outputs.version }}-win-x64
+          path: |
+            artifacts/SmtpGateway-*-win-x64.zip
+            artifacts/SmtpGateway-*-win-x64.zip.sha256
+          if-no-files-found: error
+
+      # Using the `gh` CLI (already installed on GitHub-hosted runners) rather than a
+      # third-party release action: it needs no extra action dependency to pin/trust, and
+      # `gh release create`/`gh release upload` is a single well-documented command for
+      # exactly what's needed here (create a release from the tag and attach the two files).
+      - name: Publish GitHub Release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $version = "${{ steps.version.outputs.version }}"
+          $tag = if ("${{ github.event_name }}" -eq "workflow_dispatch") { "v$version" } else { "${{ github.ref_name }}" }
+          $zip = "artifacts/SmtpGateway-$version-win-x64.zip"
+          $checksum = "$zip.sha256"
+
+          $existing = gh release view $tag 2>$null
+          if ($LASTEXITCODE -eq 0) {
+            gh release upload $tag $zip $checksum --clobber
+          }
+          else {
+            gh release create $tag $zip $checksum `
+              --title "SmtpGateway $version" `
+              --generate-notes
+          }

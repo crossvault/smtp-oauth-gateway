@@ -1,0 +1,71 @@
+name: E2E (live O365)
+
+# Live end-to-end tests that send real mail through the O365 sandbox tenant. Deliberately NO
+# push/pull_request triggers: live sends must never run per-PR, and fork PRs have no access to
+# secrets anyway. Only manual dispatch and a nightly schedule.
+on:
+  workflow_dispatch:
+  schedule:
+    # 03:00 UTC nightly - a quiet hour, well away from working-day traffic on the tenant.
+    - cron: "0 3 * * *"
+
+# A single named group with cancel-in-progress:false ensures two live runs never hammer the tenant
+# at once (a scheduled run and a manual dispatch queue rather than overlap).
+concurrency:
+  group: e2e-live
+  cancel-in-progress: false
+
+jobs:
+  e2e:
+    runs-on: windows-latest
+    # Secrets are mapped to env at job level so a later STEP can inspect them. A workflow/job-level
+    # 'if:' cannot reference the secrets context, so gating is done via the first step below reading
+    # these env vars (env-indirection), not via 'if: secrets...'.
+    env:
+      SMTPGATEWAY_E2E_TENANT_ID: ${{ secrets.SMTPGATEWAY_E2E_TENANT_ID }}
+      SMTPGATEWAY_E2E_CLIENT_ID: ${{ secrets.SMTPGATEWAY_E2E_CLIENT_ID }}
+      SMTPGATEWAY_E2E_CLIENT_SECRET: ${{ secrets.SMTPGATEWAY_E2E_CLIENT_SECRET }}
+      SMTPGATEWAY_E2E_SENDER_MAILBOX: ${{ secrets.SMTPGATEWAY_E2E_SENDER_MAILBOX }}
+      SMTPGATEWAY_E2E_RECIPIENT_MAILBOX: ${{ secrets.SMTPGATEWAY_E2E_RECIPIENT_MAILBOX }}
+      SMTPGATEWAY_E2E_RECIPIENT_MAILBOXES: ${{ secrets.SMTPGATEWAY_E2E_RECIPIENT_MAILBOXES }}
+    steps:
+      # Gate: if the tenant-id secret is empty the repo has no E2E secrets configured. We set an
+      # output and skip every real step, so the job ends green (skipped steps do not fail a job).
+      # This also sidesteps the MTP exit-code-8 trap: without the gate an all-skipped
+      # 'dotnet test' on the E2ETests project would exit 8 (zero tests executed) and turn the job
+      # red. By not running the test step at all when unconfigured, that never happens.
+      - name: Gate on E2E secrets
+        id: gate
+        shell: pwsh
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:SMTPGATEWAY_E2E_TENANT_ID)) {
+            Write-Host "E2E secrets not configured - skipping live run."
+            "configured=false" >> $env:GITHUB_OUTPUT
+          }
+          else {
+            Write-Host "E2E secrets present - running live suite."
+            "configured=true" >> $env:GITHUB_OUTPUT
+          }
+
+      - uses: actions/checkout@v4
+        if: steps.gate.outputs.configured == 'true'
+
+      - uses: actions/setup-dotnet@v4
+        if: steps.gate.outputs.configured == 'true'
+        with:
+          global-json-file: global.json
+
+      - name: Restore
+        if: steps.gate.outputs.configured == 'true'
+        run: dotnet restore
+
+      - name: Build
+        if: steps.gate.outputs.configured == 'true'
+        run: dotnet build --configuration Release --no-restore
+
+      # Run ONLY the live E2E project. The six SMTPGATEWAY_E2E_* env vars mapped above feed
+      # E2ECredentials' environment-variable fallback; GitHub auto-masks the secret values and the
+      # tests never print them, so no custom log-scrubbing is needed.
+      - name: Run live E2E tests
+        if: steps.gate.outputs.configured == 'true'
+        run: dotnet test tests/SmtpGateway.E2ETests --configuration Release --no-build
